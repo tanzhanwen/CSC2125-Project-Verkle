@@ -45,6 +45,8 @@ def generate_basis(size):
     BASIS_Q = Point(generator=False)
     return {"G": BASIS_G, "Q": BASIS_Q}
 
+BASIS = generate_basis(WIDTH)
+ipa_utils = IPAUtils(BASIS["G"], BASIS["Q"], primefield)
 
 def get_verkle_indices(key):
     """
@@ -564,8 +566,9 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         WIDTH_BITS = int(sys.argv[1])
         WIDTH = 2 ** WIDTH_BITS
-        ROOT_OF_UNITY = pow(PRIMITIVE_ROOT, (MODULUS - 1) // WIDTH, MODULUS)
-        primefield.DOMAIN = [pow(ROOT_OF_UNITY, i, MODULUS) for i in range(WIDTH)]
+        # ROOT_OF_UNITY = pow(PRIMITIVE_ROOT, (MODULUS - 1) // WIDTH, MODULUS)
+        # primefield.DOMAIN = [pow(ROOT_OF_UNITY, i, MODULUS) for i in range(WIDTH)]
+        primefield = PrimeField(MODULUS, WIDTH)
 
         NUMBER_INITIAL_KEYS = int(sys.argv[2])
 
