@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from verkle_trie import *
+from new_bintrie import *
+
+SMT_EMPTY_VALUE = b'\x00' * 32
 
 class Trie(ABC):
     def __init__(self, values):
@@ -141,6 +144,74 @@ class VerkleTrie(Trie):
             proof (_type_): proof need to be verify
         """
         return check_verkle_proof(self._root["commitment"].serialize(), keys, values, proof)
+
+
+class SMT(Trie):
+    def __init__(self, values):
+        super().__init__(values)
+        self._values = values
+        self._db = None
+        self._root = None
+        self._initialize()
+
+    def _initialize(self):
+        self._db = EphemDB()
+        self._root = new_tree(self._db)
+        for key in self._values:
+            self._root = update(self._db, self._root, key, self._values[key])
+
+    def root_hash(self):
+        """_summary_
+            Returns a hash of the trie's root node.
+        Returns:
+            _type_: bytes. For empty trie it's None
+        """
+        return self._root
+
+    def update(self, key, value):
+        """_summary_
+
+        Args:
+            key (bytes[32]): _description_
+            value (bytes[32]): _description_
+        """
+        self._root = update(self._db, self._root, key, value)
+        self._values[key] = value
+
+    def delete(self, key):
+        """_summary_
+            Delete node and update all commitments and hashes
+
+        Args:
+            key (bytes[32]): _description_
+        """
+        self._root = update(self._db, self._root, key, SMT_EMPTY_VALUE)
+        del self._values[key]
+
+    def get_proof(self, keys):
+        """_summary_
+            Creates a proof for the 'keys' in the trie
+        Args:
+            keys ([bytes]): keys in proof
+        """
+        ret_proof = []
+        for key in keys:
+            proof = make_merkle_proof(self._db, self._root, key)
+            ret_proof.append(proof)
+        return ret_proof
+
+    def verify(self, keys, values, proof):
+        """_summary_
+            Checks tree proof
+        Args:
+            keys ([bytes]): keys in proof
+            values ([bytes]): values correspond to the keys
+            proof (_type_): proof need to be verify
+        """
+        ret = True
+        for (key, value, single_proof)in zip(keys, values, proof):
+            ret = ret and verify_proof(single_proof, self._root, key, value)
+        return ret
 
 class MPT(Trie):
     def __init__(self, values):

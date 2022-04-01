@@ -6,8 +6,8 @@ import sys
 
 def test_verkle(width_bits=8, initial_keys=2**10, keys_proof=500):
     values = {}
-    NUMBER_INITIAL_KEYS = keys_proof
-    NUMBER_KEYS_PROOF = initial_keys
+    NUMBER_INITIAL_KEYS = initial_keys
+    NUMBER_KEYS_PROOF = keys_proof
 
     for _ in range(NUMBER_INITIAL_KEYS):
         key = randint(0, 2**256-1).to_bytes(32, "little")
@@ -89,9 +89,71 @@ def test_verkle(width_bits=8, initial_keys=2**10, keys_proof=500):
 
     print("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}".format(WIDTH_BITS, WIDTH, NUMBER_INITIAL_KEYS, NUMBER_KEYS_PROOF, average_depth, proof_size, proof_time, check_time))
 
+
+def test_smt(initial_keys=2 ** 10, num_keys_proof=500, num_add_keys=0, num_del_keys=0):
+    print("Start testing performance of Sparse Merkle Tree")
+    values = {}
+
+    for _ in range(initial_keys):
+        key = randint(0, 2 ** 256 - 1).to_bytes(32, "little")
+        value = randint(0, 2 ** 256 - 1).to_bytes(32, "little")
+        values[key] = value
+
+    time_a = time()
+    t = SMT(values)
+    time_b = time()
+
+    print("Inserted {0} elements in SMT".format(initial_keys), file=sys.stderr)
+    print("Construct SMT in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
+
+    time_x = time()
+    for i in range(num_add_keys):
+        key = randint(0, 2 ** 256 - 1).to_bytes(32, "little")
+        value = randint(0, 2 ** 256 - 1).to_bytes(32, "little")
+        t.update(key, value)
+        values[key] = value
+    time_y = time()
+
+    print("Additionally inserted {0} elements in {1:.3f} s".format(num_add_keys, time_y - time_x), file=sys.stderr)
+
+    all_keys = list(values.keys())
+    shuffle(all_keys)
+
+    keys_to_delete = all_keys[:num_del_keys]
+
+    time_a = time()
+    for key in keys_to_delete:
+        t.delete(key)
+        del values[key]
+    time_b = time()
+
+    print("Deleted {0} elements in {1:.3f} s".format(num_del_keys, time_b - time_a), file=sys.stderr)
+
+    all_keys = list(values.keys())
+    shuffle(all_keys)
+
+    keys_in_proof = all_keys[:num_keys_proof]
+
+    time_a = time()
+    proof = t.get_proof(keys_in_proof)
+    time_b = time()
+
+    #proof_size = get_proof_size(proof)
+    proof_time = time_b - time_a
+
+    print("Computed proof for {0} keys in {1:.3f} s".format(num_keys_proof, proof_time), file=sys.stderr)
+
+    time_a = time()
+    assert t.verify(keys_in_proof, [t._values[key] for key in keys_in_proof], proof)
+    time_b = time()
+    check_time = time_b - time_a
+
+    print("Checked proof in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
+
 def test_mpt():
     # TODO
     pass
 
 if __name__ == "__main__":
     test_verkle()
+    #test_smt()
