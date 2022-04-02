@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from verkle_trie import *
 from new_bintrie import *
+from mpt import *
 
 SMT_EMPTY_VALUE = b'\x00' * 32
 
@@ -216,11 +217,12 @@ class SMT(Trie):
 class MPT(Trie):
     def __init__(self, values):
         super().__init__(values)
+        self._root = MerklePatriciaTrie({}, secure=True)
         self._initialize()
 
     def _initialize(self):
-        # TODO
-        pass
+        for key in self._values:
+            self._root.update(key, self._values[key])
 
     def root_hash(self):
         """_summary_
@@ -228,8 +230,7 @@ class MPT(Trie):
         Returns:
             _type_: bytes. For empty trie it's None
         """
-        # TODO
-        pass
+        self._root.root_hash()
 
     def update(self, key, value):
         """_summary_
@@ -238,8 +239,8 @@ class MPT(Trie):
             key (bytes[32]): _description_
             value (bytes[32]): _description_
         """
-        # TODO
-        pass
+        self._root.update(key, value)
+        self._values[key] = value
     
     def delete(self, key):
 
@@ -249,8 +250,8 @@ class MPT(Trie):
         Args:
             key (bytes[32]): _description_
         """
-        # TODO
-        pass
+        self._root.delete(key)
+        del self._values[key]
     
     def get_proof(self, keys):
         """_summary_
@@ -258,7 +259,6 @@ class MPT(Trie):
         Args:
             keys ([bytes]): keys in proof
         """
-        # TODO
         pass
     
     def verify(self, keys, values, proof):
@@ -269,7 +269,6 @@ class MPT(Trie):
             values ([bytes]): values correspond to the keys
             proof (_type_): proof need to be verify
         """
-        # TODO
         pass
 
 if __name__ == "__main__":

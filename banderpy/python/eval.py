@@ -1,4 +1,5 @@
 # Evaluation of performance of Merkle and Verkle Tree
+from audioop import add
 from random import randint, shuffle
 from time import time
 from trie import *
@@ -132,9 +133,36 @@ def test_smt(values, added_values):
 
     print("Checked proof in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
 
-def test_mpt():
-    # TODO
-    pass
+def test_mpt(values, added_values):
+    print("Start testing performance of Sparse Merkle Tree")
+
+    time_a = time()
+    t = MPT(values)
+    time_b = time()
+
+    print("Inserted {0} elements in SMT".format(NUMBER_INITIAL_KEYS), file=sys.stderr)
+    print("Construct SMT in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
+
+    time_x = time()
+    for key in added_values:
+        t.update(key, added_values[key])
+        # values[key] = added_values[key]
+    time_y = time()
+
+    print("Additionally inserted {0} elements in {1:.3f} s".format(NUMBER_ADDED_KEYS, time_y - time_x), file=sys.stderr)
+
+    all_keys = list(values.keys())
+    shuffle(all_keys)
+
+    keys_to_delete = all_keys[:NUMBER_DELETED_KEYS]
+
+    time_a = time()
+    for key in keys_to_delete:
+        t.delete(key)
+        # del values[key]
+    time_b = time()
+
+    print("Deleted {0} elements in {1:.3f} s".format(NUMBER_DELETED_KEYS, time_b - time_a), file=sys.stderr)
 
 if __name__ == "__main__":
     NUMBER_INITIAL_KEYS = 2**10
@@ -154,5 +182,6 @@ if __name__ == "__main__":
         value = randint(0, 2**256-1).to_bytes(32, "little")
         added_values[key] = value
 
-    test_verkle(copy.deepcopy(initial_values),copy.deepcopy(added_values))
-    test_smt(copy.deepcopy(initial_values),copy.deepcopy(added_values))
+    test_verkle(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    test_smt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    test_mpt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
