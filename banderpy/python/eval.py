@@ -121,10 +121,12 @@ def test_smt(values, added_values):
     proof = t.get_proof(keys_in_proof)
     time_b = time()
 
-    #proof_size = get_proof_size(proof)
+    proof_size = 0
+    for i in range(len(proof)):
+        proof_size = proof_size + len(proof[i])
     proof_time = time_b - time_a
 
-    print("Computed proof for {0} keys in {1:.3f} s".format(NUMBER_KEYS_PROOF, proof_time), file=sys.stderr)
+    print("Computed proof for {0} keys in {1:.3f} s, size: {2} bytes".format(NUMBER_KEYS_PROOF, proof_time, proof_size), file=sys.stderr)
 
     time_a = time()
     assert t.verify(keys_in_proof, [t._values[key] for key in keys_in_proof], proof)

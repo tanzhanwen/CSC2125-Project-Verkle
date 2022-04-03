@@ -198,7 +198,7 @@ class SMT(Trie):
         ret_proof = []
         for key in keys:
             proof = make_merkle_proof(self._db, self._root, key)
-            ret_proof.append(proof)
+            ret_proof.append(compress_proof(proof))
         return ret_proof
 
     def verify(self, keys, values, proof):
@@ -211,7 +211,7 @@ class SMT(Trie):
         """
         ret = True
         for (key, value, single_proof)in zip(keys, values, proof):
-            ret = ret and verify_proof(single_proof, self._root, key, value)
+            ret = ret and verify_proof(decompress_proof(single_proof), self._root, key, value)
         return ret
 
 class MPT(Trie):
