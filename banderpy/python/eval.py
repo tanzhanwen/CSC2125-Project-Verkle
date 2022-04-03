@@ -184,6 +184,8 @@ if __name__ == "__main__":
         value = randint(0, 2**256-1).to_bytes(32, "little")
         added_values[key] = value
 
-    test_verkle(copy.deepcopy(initial_values), copy.deepcopy(added_values))
-    test_smt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
-    test_mpt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    for i in [2, 4, 6, 8, 10, 12]:
+        print(f'width_bits: {i}')
+        test_verkle(copy.deepcopy(initial_values), copy.deepcopy(added_values), width_bits = i)
+    # test_smt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    # test_mpt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
