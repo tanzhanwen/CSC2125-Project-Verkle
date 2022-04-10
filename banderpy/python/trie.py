@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from glob import glob
 from verkle_trie import *
 from new_bintrie import *
 from mpt import *
@@ -148,15 +149,15 @@ class VerkleTrie(Trie):
 
 
 class SMT(Trie):
-    def __init__(self, values):
+    def __init__(self, values, db=None):
         super().__init__(values)
         self._values = values
-        self._db = None
         self._root = None
+        self._db = EphemDB(kv=db)
         self._initialize()
 
     def _initialize(self):
-        self._db = EphemDB()
+        # self._db = EphemDB()
         self._root = new_tree(self._db)
         for key in self._values:
             self._root = update(self._db, self._root, key, self._values[key])
@@ -215,9 +216,9 @@ class SMT(Trie):
         return ret
 
 class MPT(Trie):
-    def __init__(self, values):
+    def __init__(self, values, storage={}):
         super().__init__(values)
-        self._root = MerklePatriciaTrie({}, secure=True)
+        self._root = MerklePatriciaTrie(storage, secure=True)
         self._initialize()
 
     def _initialize(self):

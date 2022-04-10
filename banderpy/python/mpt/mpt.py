@@ -143,7 +143,10 @@ class MerklePatriciaTrie:
     def _get_node(self, node_ref):
         raw_node = None
         if len(node_ref) == 32:
-            raw_node = self._storage[node_ref]
+            if isinstance(self._storage, dict):
+                raw_node = self._storage[node_ref]
+            else:
+                raw_node = self._storage.get(node_ref)
         else:
             raw_node = node_ref
         return Node.decode(raw_node)
@@ -309,7 +312,10 @@ class MerklePatriciaTrie:
         """ Builds the reference from the node and if needed saves node in the storage. """
         reference = Node.into_reference(node)
         if len(reference) == 32:
-            self._storage[reference] = node.encode()
+            if isinstance(self._storage, dict):
+                self._storage[reference] = node.encode()
+            else:
+                self._storage.put(reference, node.encode)
         return reference
 
     # Enum that shows which action was performed on the previous step of the deletion.

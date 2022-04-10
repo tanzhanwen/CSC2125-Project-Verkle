@@ -3,6 +3,7 @@ from audioop import add
 from random import randint, shuffle
 from time import time
 from trie import *
+import plyvel
 import copy
 import sys
 
@@ -81,11 +82,11 @@ def test_verkle(values, added_values, width_bits=8):
     print("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}".format(WIDTH_BITS, WIDTH, NUMBER_INITIAL_KEYS, NUMBER_KEYS_PROOF, average_depth, proof_size, proof_time, check_time))
 
 
-def test_smt(values, added_values):
+def test_smt(values, added_values, db=None):
     print("Start testing performance of Sparse Merkle Tree")
 
     time_a = time()
-    t = SMT(values)
+    t = SMT(values, db)
     time_b = time()
 
     print("Inserted {0} elements in SMT".format(NUMBER_INITIAL_KEYS), file=sys.stderr)
@@ -135,11 +136,11 @@ def test_smt(values, added_values):
 
     print("Checked proof in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
 
-def test_mpt(values, added_values):
+def test_mpt(values, added_values, db={}):
     print("Start testing performance of Sparse Merkle Tree")
 
     time_a = time()
-    t = MPT(values)
+    t = MPT(values, db)
     time_b = time()
 
     print("Inserted {0} elements in SMT".format(NUMBER_INITIAL_KEYS), file=sys.stderr)
@@ -166,6 +167,11 @@ def test_mpt(values, added_values):
 
     print("Deleted {0} elements in {1:.3f} s".format(NUMBER_DELETED_KEYS, time_b - time_a), file=sys.stderr)
 
+def close_database():
+    # plyvel.destroy_db('/tmp/MPT/')
+    plyvel.destroy_db('/tmp/SMT/')
+    # plyvel.destroy_db('/tmp/Verkle/') # TODO
+
 if __name__ == "__main__":
     NUMBER_INITIAL_KEYS = 2**10
     NUMBER_KEYS_PROOF = 500
@@ -184,6 +190,20 @@ if __name__ == "__main__":
         value = randint(0, 2**256-1).to_bytes(32, "little")
         added_values[key] = value
 
-    test_verkle(copy.deepcopy(initial_values), copy.deepcopy(added_values))
-    test_smt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
-    test_mpt(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    # clean database
+    close_database()
+
+    # create leveldb for each trie
+    # db_verkle = plyvel.DB('/tmp/Verkle/', create_if_missing=True) # TODO
+    db_smt = plyvel.DB('/tmp/SMT/', create_if_missing=True) 
+    db_mpt = plyvel.DB('/tmp/MPT/', create_if_missing=True)
+
+    # test_verkle(copy.deepcopy(initial_values), copy.deepcopy(added_values))
+    test_smt(copy.deepcopy(initial_values), copy.deepcopy(added_values), db_smt)
+    test_mpt(copy.deepcopy(initial_values), copy.deepcopy(added_values), db=db_mpt)
+
+    # del db_verkle
+    del db_smt
+    del db_mpt
+
+    close_database()

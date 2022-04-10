@@ -5,13 +5,24 @@ class EphemDB():
         self.kv = kv or {}
 
     def get(self, k):
-        return self.kv.get(k, None)
+        if isinstance(self.kv, dict):
+            return self.kv.get(k, None)
+        else:
+            return self.kv.get(k)
 
     def put(self, k, v):
-        self.kv[k] = v
+        if isinstance(self.kv, dict):
+            self.kv[k] = v
+        else: 
+            # leveldb
+            self.kv.put(k, v)
 
     def delete(self, k):
-        del self.kv[k]
+        if isinstance(self.kv, dict):
+            del self.kv[k]
+        else:
+            # leveldb
+            self.kv.delete(k)
 
 zerohashes = [b'\x00' * 32]
 for i in range(256):
