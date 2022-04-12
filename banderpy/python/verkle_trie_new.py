@@ -277,7 +277,7 @@ class VerkleTrie:
             if not is_trie_root:
                 only_child = self.get_only_child(node)
                 if only_child is not None:
-                    assert only_child["node_type"] == "inner"
+                    assert only_child.type == "inner"
         
             lagrange_polynomials = []
             values = {}
@@ -486,16 +486,67 @@ class VerkleTrie:
 
         return True
 
+    def delete_verkle_node(self, key):
+        """
+        Delete node and update all commitments and hashes
+        """
+        current_node = self._root
+        indices = iter(self.get_verkle_indices(key))
+        index = None
+        path = []
+        update_node = []
+
+        while True:
+            index = next(indices)
+            path.append((index, current_node))
+            assert str(index) in current_node.data, "Tried to delete non-existent key"
+            child_node = self._get_node_by_hash(current_node.data[str(index)])
+            if child_node.type == "leaf":
+                deleted_node = child_node
+                assert deleted_node.data["key"] == key, "Tried to delete non-existent key"
+                del current_node.data[str(index)]
+                update_node.append(current_node)
+                self._delete_node(deleted_node.get_path_hash())
+                value_change = (MODULUS - deleted_node.data["hash"]) % MODULUS
+                break
+            current_node = child_node
+        
+        # Update all the parent commitments along 'path'
+        replacement_node = None
+        for index, node in reversed(path):
+            if replacement_node != None:
+                node.data[str(index)] = replacement_node.get_path_hash()
+                replacement_node = None
+            only_child = self.get_only_child(node)
+            if only_child != None and only_child.type == "leaf" and node != self._root:
+                replacement_node = only_child
+                value_change = (MODULUS + only_child.data["hash"] - node.data["hash"]) % MODULUS
+            else:  
+                old_point = Point().deserialize(node.data["commitment"])          
+                node.data["commitment"] = old_point.add(self.BASIS["G"][index].dup().mul(value_change)).serialize()
+                old_hash = node.data["hash"]
+                new_hash = int.from_bytes(node.data["commitment"], "little") % MODULUS
+                node.data["hash"] = new_hash
+                value_change = (MODULUS + new_hash - old_hash) % MODULUS
+            update_node.append(node)
+
+        self._store_nodes(update_node)
+
+    def _delete_node(self, path_hash):
+        self._storage.delete(path_hash)
+
 if __name__ == "__main__":
     plyvel.destroy_db('/tmp/MPT/')
     db_verkle = plyvel.DB('/tmp/Verkle/', create_if_missing=True)
     verkle = VerkleTrie(storage=db_verkle)
 
+    values = {}
+
     for i in range(verkle.NUMBER_INITIAL_KEYS):
         key = randint(0, 2**256-1).to_bytes(32, "little")
         value = randint(0, 2**256-1).to_bytes(32, "little")
         verkle.insert_verkle_node(key, value)
-        # values[key] = value
+        values[key] = value
 
     # verkle.insert_verkle_node(int(1234).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
     # verkle.insert_verkle_node(int(66770).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
@@ -523,6 +574,7 @@ if __name__ == "__main__":
         key = randint(0, 2**256-1).to_bytes(32, "little")
         value = randint(0, 2**256-1).to_bytes(32, "little")
         verkle.update_verkle_node(key, value)
+        values[key] = value
     time_y = time()
             
     print("Additionally inserted {0} elements in {1:.3f} s".format(verkle.NUMBER_ADDED_KEYS, time_y - time_x), file=sys.stderr)
@@ -531,6 +583,26 @@ if __name__ == "__main__":
     verkle.check_valid_tree(verkle._root)
     time_b = time()
 
+    print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
+
+    all_keys = list(values.keys())
+    shuffle(all_keys)
+
+    keys_to_delete = all_keys[:verkle.NUMBER_DELETED_KEYS]
+
+    time_a = time()
+    for key in keys_to_delete:
+        verkle.delete_verkle_node(key)
+        del values[key]
+    time_b = time()
+
+    print("Deleted {0} elements in {1:.3f} s".format(verkle.NUMBER_DELETED_KEYS, time_b - time_a), file=sys.stderr)
+    print("Keys in tree now: {0}, average depth: {1:.3f}".format(verkle.get_total_depth(verkle._root)[1], verkle.get_average_depth()), file=sys.stderr)
+
+    time_a = time()
+    verkle.check_valid_tree()
+    time_b = time()
+    
     print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
 
     del db_verkle
