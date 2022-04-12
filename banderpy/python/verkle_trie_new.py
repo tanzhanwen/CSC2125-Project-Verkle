@@ -46,6 +46,8 @@ class VerkleTrie:
         self.BASIS = self.generate_basis()
         self.ipa_utils = IPAUtils(self.BASIS["G"], self.BASIS["Q"], self.primefield)
 
+        self.lasttime = [0]
+
     def root(self):
         """ Returns a root node of the trie. Type is `bytes` if trie isn't empty and `None` othrewise. """
         return self._root
@@ -174,7 +176,7 @@ class VerkleTrie:
                     # child_node.test_print()
                     if child_node.data["key"] == key:
                         # leaf node exist and update
-                        new_leaf_node.path = rlp.encode(path_index)
+                        new_leaf_node.path = hash(rlp.encode(path_index))
                         self._store_node(new_leaf_node)
                         value_change = (MODULUS + new_leaf_node.data["hash"] - old_node.data["hash"]) % MODULUS
                         break
@@ -314,6 +316,176 @@ class VerkleTrie:
                     child_count += 1
         return only_child
 
+    def get_total_depth(self, node):
+        """
+        Computes the total depth (sum of the depth of all nodes) of a verkle trie
+        """
+        if node.type == "inner":
+            total_depth = 0
+            num_nodes = 0
+            for i in range(self.WIDTH):
+                if str(i) in node.data:
+                    node_i = self._get_node_by_hash(node.data[str(i)])
+                    depth, nodes = self.get_total_depth(node_i)
+                    num_nodes += nodes
+                    total_depth += nodes + depth
+            return total_depth, num_nodes
+        else:
+            return 0, 1
+
+    def get_average_depth(self):
+        """
+        Get the average depth of nodes in a verkle trie
+        """
+        depth, nodes = self.get_total_depth(self._root)
+        return depth / nodes
+
+    def find_node_with_path(self, key):
+        """
+        As 'find_node', but returns the path of all nodes on the way to 'key' as well as their index
+        """
+        current_node = self._root
+        indices = iter(self.get_verkle_indices(key))
+        path = []
+        current_index_path = []
+        while current_node.type == "inner":
+            index = next(indices)
+            path.append((tuple(current_index_path), index, current_node))
+            current_index_path.append(index)
+            if str(index) in current_node.data:
+                current_node = self._get_node_by_hash(current_node.data[str(index)])
+            else:
+                return path, None
+        if current_node.data["key"] == key:
+            return path, current_node
+        return path, None
+
+    def get_proof_size(self, proof):
+        depths, commitments_sorted_by_index_serialized, D_serialized, ipa_proof = proof
+        size = len(depths) # assume 8 bit integer to represent the depth
+        size += 32 * len(commitments_sorted_by_index_serialized)
+        size += 32 + (len(ipa_proof) - 1) * 2 * 32 + 32
+        return size
+
+    def start_logging_time_if_eligible(self, string, eligible):
+        if eligible:
+            print(string, file=sys.stderr)
+            self.lasttime[0] = time()
+
+            
+    def log_time_if_eligible(self, string, width, eligible):
+        if eligible:
+            print(string + ' ' * max(1, width - len(string)) + "{0:7.3f} s".format(time() - self.lasttime[0]), file=sys.stderr)
+            self.lasttime[0] = time()
+
+
+    def make_ipa_multiproof(self, Cs, fs, indices, ys, display_times=True):
+        """
+        Computes an IPA multiproof according to the schema described here:
+        https://dankradfeist.de/ethereum/2021/06/18/pcs-multiproofs.html
+
+        zs[i] = primefield.DOMAIN[indexes[i]]
+        """
+
+        # Step 1: Construct g(X) polynomial in evaluation form
+        r = self.ipa_utils.hash_to_field(Cs + indices + ys) % MODULUS
+
+        self.log_time_if_eligible("   Hashed to r", 30, display_times)
+
+        g = [0 for i in range(self.WIDTH)]
+        power_of_r = 1
+        for f, index in zip(fs, indices):
+            quotient = self.primefield.compute_inner_quotient_in_evaluation_form(f, index)
+            for i in range(self.WIDTH):
+                g[i] += power_of_r * quotient[i]
+
+            power_of_r = power_of_r * r % MODULUS
+        
+        for i in range(len(g)):
+            g[i] %= MODULUS
+
+        self.log_time_if_eligible("   Computed g polynomial", 30, display_times)
+
+        D = self.ipa_utils.pedersen_commit(g)
+
+        self.log_time_if_eligible("   Computed commitment D", 30, display_times)
+
+        # Step 2: Compute h in evaluation form
+        
+        t = self.ipa_utils.hash_to_field([r, D]) % MODULUS
+        
+        h = [0 for i in range(self.WIDTH)]
+        power_of_r = 1
+        
+        for f, index in zip(fs, indices):
+            denominator_inv = self.primefield.inv(t - self.primefield.DOMAIN[index])
+            for i in range(self.WIDTH):
+                h[i] += power_of_r * f[i] * denominator_inv % MODULUS
+                
+            power_of_r = power_of_r * r % MODULUS
+    
+        for i in range(len(h)):
+            h[i] %= MODULUS
+
+        self.log_time_if_eligible("   Computed h polynomial", 30, display_times)
+
+        h_minus_g = [(h[i] - g[i]) % self.primefield.MODULUS for i in range(self.WIDTH)]
+
+        # Step 3: Evaluate and compute IPA proofs
+
+        E = self.ipa_utils.pedersen_commit(h)
+
+        y, ipa_proof = self.ipa_utils.evaluate_and_compute_ipa_proof(E.dup().add(D.dup().mul(MODULUS-1)), h_minus_g, t)
+
+        self.log_time_if_eligible("   Computed IPA proof", 30, display_times)
+
+        return D.serialize(), ipa_proof
+
+
+    def check_ipa_multiproof(self, Cs, indices, ys, proof, display_times=True):
+        """
+        Verifies an IPA multiproof according to the schema described here:
+        https://dankradfeist.de/ethereum/2021/06/18/pcs-multiproofs.html
+        """
+
+        D_serialized, ipa_proof = proof
+
+        D = Point().deserialize(D_serialized)
+
+        # Step 1
+        r = self.ipa_utils.hash_to_field(Cs + indices + ys)
+
+        self.log_time_if_eligible("   Computed r hash", 30, display_times)
+        
+        # Step 2
+        t = self.ipa_utils.hash_to_field([r, D])
+        E_coefficients = []
+        g_2_of_t = 0
+        power_of_r = 1
+
+        for index, y in zip(indices, ys):
+            E_coefficient = self.primefield.div(power_of_r, t - self.primefield.DOMAIN[index])
+            E_coefficients.append(E_coefficient)
+            g_2_of_t += E_coefficient * y % MODULUS
+                
+            power_of_r = power_of_r * r % MODULUS
+
+        self.log_time_if_eligible("   Computed g2 and e coeffs", 30, display_times)
+        
+        E = Point().msm(Cs, E_coefficients)
+
+        self.log_time_if_eligible("   Computed E commitment", 30, display_times)
+
+        # Step 3 (Check IPA proofs)
+        y = g_2_of_t % self.primefield.MODULUS
+
+        if not self.ipa_utils.check_ipa_proof(E.dup().add(D.dup().mul(MODULUS-1)), t, y, ipa_proof):
+            return False
+
+        self.log_time_if_eligible("   Checked IPA proof", 30, display_times)
+
+        return True
+
 if __name__ == "__main__":
     plyvel.destroy_db('/tmp/MPT/')
     db_verkle = plyvel.DB('/tmp/Verkle/', create_if_missing=True)
@@ -327,6 +499,10 @@ if __name__ == "__main__":
 
     # verkle.insert_verkle_node(int(1234).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
     # verkle.insert_verkle_node(int(66770).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
+
+    average_depth = verkle.get_average_depth()
+        
+    print("Inserted {0} elements for an average depth of {1:.3f}".format(verkle.NUMBER_INITIAL_KEYS, average_depth), file=sys.stderr)
 
     time_a = time()
     verkle.add_node_hash(verkle._root)
