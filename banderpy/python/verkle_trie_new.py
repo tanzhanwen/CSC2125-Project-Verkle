@@ -171,6 +171,7 @@ class VerkleTrie:
                 child_node = self._get_node_by_hash(current_node.data[index])
                 if child_node.type == "leaf":
                     old_node = child_node
+                    child_node.test_print()
                     if child_node.data["key"] == key:
                         # leaf node exist and update
                         new_leaf_node.path = rlp.encode(path_index)
@@ -197,8 +198,16 @@ class VerkleTrie:
                             old_index = str(self.get_verkle_indices(old_node["key"])[len(path) + len(inserted_path)])
                             current_node = next_inner_node
 
-                        current_node[new_index] = new_leaf_node.get_path_hash()
-                        current_node[old_index] = old_node.get_path_hash()
+                        path_index.append(new_index)
+                        new_leaf_node.path = hash(rlp.encode(path_index))
+                        update_node.append(new_leaf_node)
+                        current_node.data[new_index] = new_leaf_node.get_path_hash()
+
+                        path_index.pop()
+                        path_index.append(old_index)
+                        old_node.path = hash(rlp.encode(path_index))
+                        update_node.append(old_node)
+                        current_node.data[old_index] = old_node.get_path_hash()
                         self._store_nodes(update_node)
                         update_node.clear()
                         self.add_node_hash(current_node)
@@ -206,7 +215,7 @@ class VerkleTrie:
                         for index, node in reversed(inserted_path):
                             self.add_node_hash(node)
 
-                        value_change = (MODULUS + new_inner_node["hash"] - old_node["hash"]) % MODULUS
+                        value_change = (MODULUS + new_inner_node.data["hash"] - old_node.data["hash"]) % MODULUS
                         break
                 # exist inner node
                 current_node = self._get_node_by_hash(current_node.data[index])
@@ -252,7 +261,7 @@ class VerkleTrie:
                     if "hash" not in node_i.data:
                         self.add_node_hash(node_i)
                     values[i] = node_i.data["hash"]
-                    print(values[i])
+                    # print(values[i])
             commitment = self.ipa_utils.pedersen_commit_sparse(values)
             node.data["commitment"] = commitment.serialize()
             node.data["hash"] = int.from_bytes(commitment.serialize(), "little") % MODULUS
@@ -310,7 +319,7 @@ if __name__ == "__main__":
     db_verkle = plyvel.DB('/tmp/Verkle/', create_if_missing=True)
     verkle = VerkleTrie(storage=db_verkle)
 
-    for i in range(4):
+    for i in range(verkle.NUMBER_INITIAL_KEYS):
         key = randint(0, 2**256-1).to_bytes(32, "little")
         value = randint(0, 2**256-1).to_bytes(32, "little")
         verkle.insert_verkle_node(key, value)
@@ -323,10 +332,27 @@ if __name__ == "__main__":
     print("Computed verkle root in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
 
     print(verkle._root.data["hash"])
+
     time_a = time()
     verkle.check_valid_tree(verkle._root)
     time_b = time()
+
+    print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
     
+    time_x = time()
+    for i in range(verkle.NUMBER_ADDED_KEYS):
+        key = randint(0, 2**256-1).to_bytes(32, "little")
+        value = randint(0, 2**256-1).to_bytes(32, "little")
+        verkle.update_verkle_node(key, value)
+    time_y = time()
+            
+    print("Additionally inserted {0} elements in {1:.3f} s".format(verkle.NUMBER_ADDED_KEYS, time_y - time_x), file=sys.stderr)
+
+    time_a = time()
+    verkle.check_valid_tree(verkle._root)
+    time_b = time()
+
+    print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
 
     del db_verkle
     plyvel.destroy_db('/tmp/MPT/')
