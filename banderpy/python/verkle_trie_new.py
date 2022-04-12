@@ -31,7 +31,7 @@ class VerkleTrie:
         self.primefield = PrimeField(MODULUS, self.WIDTH)
 
         # Number of key-value pairs to insert
-        self.NUMBER_INITIAL_KEYS = 2**2
+        self.NUMBER_INITIAL_KEYS = 2**10
 
         # Number of keys to insert after computing initial tree
         self.NUMBER_ADDED_KEYS = 512
@@ -92,7 +92,7 @@ class VerkleTrie:
             index = str(next(indices))
             path.append(index)
             if index in current_node.data:
-                current_node = self._get_node_by_path(path) # get inner node from leveldb by its path
+                current_node = self._get_node_by_hash(current_node.data[index]) # get inner node from leveldb by its path
             else:
                 # leaf node does not exist
                 # current_node[index] = {"node_type": "leaf", "key": key, "value": value}
@@ -113,8 +113,8 @@ class VerkleTrie:
             new_inner = self.create_inner_node(path, data={"commitment": Point().mul(0).serialize()})
             self._store_node(new_inner)
             # previous_node.update_next_ref(index, new_inner)
-            self.insert_verkle_node(self._root, key, value)
-            self.insert_verkle_node(self._root, current_node.data["key"], current_node.data["value"])
+            self.insert_verkle_node(key, value)
+            self.insert_verkle_node(current_node.data["key"], current_node.data["value"])
 
     def _get_node_by_path(self, path):
         path_hash = hash(rlp.encode(path))
@@ -171,7 +171,7 @@ class VerkleTrie:
                 child_node = self._get_node_by_hash(current_node.data[index])
                 if child_node.type == "leaf":
                     old_node = child_node
-                    child_node.test_print()
+                    # child_node.test_print()
                     if child_node.data["key"] == key:
                         # leaf node exist and update
                         new_leaf_node.path = rlp.encode(path_index)
@@ -324,6 +324,9 @@ if __name__ == "__main__":
         value = randint(0, 2**256-1).to_bytes(32, "little")
         verkle.insert_verkle_node(key, value)
         # values[key] = value
+
+    # verkle.insert_verkle_node(int(1234).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
+    # verkle.insert_verkle_node(int(66770).to_bytes(32, "little"), int(1).to_bytes(32, "little"))
 
     time_a = time()
     verkle.add_node_hash(verkle._root)

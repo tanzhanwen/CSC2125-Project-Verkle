@@ -9,7 +9,7 @@ def to_list(data: dict):
     return sorted(data.items(), key=lambda x: x[0], reverse=False)
 
 class Node:
-    ROOT_PATH = rlp.encode(b'')
+    ROOT_PATH = hash(rlp.encode(b''))
 
     class Leaf:
         def __init__(self, path, data={}):
@@ -56,7 +56,7 @@ class Node:
         decode_str = rlp.decode(encoded_data)
 
         # assert len(data) == 17 or len(data) == 2   # TODO throw exception
-        node_type = decode_str[0]
+        node_type = decode_str[0].decode()
 
         data = {}
         for i in range(len(decode_str[1])):

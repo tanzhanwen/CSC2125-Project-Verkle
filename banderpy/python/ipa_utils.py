@@ -1,3 +1,4 @@
+from random import randint
 from bandersnatch import Point, Scalar
 from poly_utils import PrimeField
 import hashlib
