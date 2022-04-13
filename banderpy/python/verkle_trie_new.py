@@ -32,16 +32,16 @@ class VerkleTrie:
         self.primefield = PrimeField(MODULUS, self.WIDTH)
 
         # Number of key-value pairs to insert
-        self.NUMBER_INITIAL_KEYS = 2**15
+        self.NUMBER_INITIAL_KEYS = 2**10
 
         # Number of keys to insert after computing initial tree
-        self.NUMBER_ADDED_KEYS = 2**11
+        self.NUMBER_ADDED_KEYS = 512
 
         # Number of keys to delete
         self.NUMBER_DELETED_KEYS = 512
 
         # Number of key/values pair in proof
-        self.NUMBER_KEYS_PROOF = 5000
+        self.NUMBER_KEYS_PROOF = 500
         
 
         self.BASIS = self.generate_basis()
@@ -520,7 +520,7 @@ class VerkleTrie:
                 deleted_node = child_node
                 assert deleted_node.data["key"] == key, "Tried to delete non-existent key"
                 del current_node.data[str(index)]
-                self._store_node(current_node)
+                #self._store_node(current_node)
                 self._delete_node(deleted_node.get_path_hash())
                 value_change = (MODULUS - deleted_node.data["hash"]) % MODULUS
                 break
@@ -549,6 +549,123 @@ class VerkleTrie:
 
     def _delete_node(self, path_hash):
         self._storage.delete(path_hash)
+
+    def make_verkle_proof(self, keys, display_times=True):
+        """
+        Creates a proof for the 'keys' in the verkle trie given by 'trie'
+        """
+
+        self.start_logging_time_if_eligible("   Starting proof computation", display_times)
+
+        # Step 0: Find all keys in the trie
+        nodes_by_index = {}
+        nodes_by_index_and_subindex = {}
+        values = []
+        depths = []
+        for key in keys:
+            path, node = self.find_node_with_path(key)
+            depths.append(len(path))
+            values.append(node.data["value"])
+            for index, subindex, node in path:
+                nodes_by_index[index] = node
+                nodes_by_index_and_subindex[(index, subindex)] = node
+
+        self.log_time_if_eligible("   Computed key paths", 30, display_times)
+
+        # All commitments, but without any duplications. These are for sending over the wire as part of the proof
+        nodes_sorted_by_index = list(map(lambda x: x[1], sorted(nodes_by_index.items())))
+
+        # Nodes sorted
+        nodes_sorted_by_index_and_subindex = list(map(lambda x: x[1], sorted(nodes_by_index_and_subindex.items())))
+
+        indices = list(map(lambda x: x[0][1], sorted(nodes_by_index_and_subindex.items())))
+
+        #ys = list(map(lambda x: x[1][x[0][1]]["hash"], sorted(nodes_by_index_and_subindex.items())))
+        ys = []
+        sorted_list = sorted(nodes_by_index_and_subindex.items())
+        for first, second in sorted_list:
+            my_node = self._get_node_by_hash(second.data[str(first[1])])
+            ys.append(my_node.data["hash"])
+
+        self.log_time_if_eligible("   Sorted all commitments", 30, display_times)
+
+        fs = []
+        Cs = [Point().deserialize(x.data["commitment"]) for x in nodes_sorted_by_index_and_subindex]
+
+        for node in nodes_sorted_by_index_and_subindex:
+            #fs.append([node[i]["hash"] if str(i) in node.data else 0 for i in range(self.WIDTH)])
+            fs.append([self._get_node_by_hash(node.data[str(i)]).data["hash"] if str(i) in node.data else 0 for i in range(self.WIDTH)])
+
+        D, ipa_proof = self.make_ipa_multiproof(Cs, fs, indices, ys, display_times)
+
+        commitments_sorted_by_index_serialized = [x.data["commitment"] for x in nodes_sorted_by_index[1:]]
+
+        self.log_time_if_eligible("   Serialized commitments", 30, display_times)
+
+        return depths, commitments_sorted_by_index_serialized, D, ipa_proof
+
+    def check_verkle_proof(self, keys, values, proof, display_times=True):
+        """
+        Checks Verkle tree proof according to
+        https://notes.ethereum.org/nrQqhVpQRi6acQckwm1Ryg?both
+        """
+
+        trie = self._root.data["commitment"]
+
+        self.start_logging_time_if_eligible("   Starting proof check", display_times)
+
+        # Unpack the proof
+        depths, commitments_sorted_by_index_serialized, D_serialized, ipa_proof = proof
+        commitments_sorted_by_index = [Point().deserialize(trie)] + [Point().deserialize(x) for x in commitments_sorted_by_index_serialized]
+
+        all_indices = set()
+        all_indices_and_subindices = set()
+
+        leaf_values_by_index_and_subindex = {}
+
+        # Find all required indices
+        for key, value, depth in zip(keys, values, depths):
+            verkle_indices = self.get_verkle_indices(key)
+            for i in range(depth):
+                all_indices.add(verkle_indices[:i])
+                all_indices_and_subindices.add((verkle_indices[:i], verkle_indices[i]))
+            commitment = self.ipa_utils.pedersen_commit_sparse({0: 1,
+                                                           1: int.from_bytes(key[:31], "little"),
+                                                           2: int.from_bytes(value[:16], "little"),
+                                                           3: int.from_bytes(value[16:], "little")})
+            leaf_values_by_index_and_subindex[(verkle_indices[:depth - 1], verkle_indices[depth - 1])] = \
+                int.from_bytes(commitment.serialize(), "little") % MODULUS
+
+        all_indices = sorted(all_indices)
+        all_indices_and_subindices = sorted(all_indices_and_subindices)
+
+        self.log_time_if_eligible("   Computed indices", 30, display_times)
+
+        # Step 0: recreate the commitment list sorted by indices
+        commitments_by_index = {index: commitment for index, commitment in
+                                zip(all_indices, commitments_sorted_by_index)}
+        commitments_by_index_and_subindex = {index_and_subindex: commitments_by_index[index_and_subindex[0]]
+                                             for index_and_subindex in all_indices_and_subindices}
+
+        subhashes_by_index_and_subindex = {}
+        for index_and_subindex in all_indices_and_subindices:
+            full_subindex = index_and_subindex[0] + (index_and_subindex[1],)
+            if full_subindex in commitments_by_index:
+                subhashes_by_index_and_subindex[index_and_subindex] = int.from_bytes(
+                    commitments_by_index[full_subindex].serialize(), "little") % MODULUS
+            else:
+                subhashes_by_index_and_subindex[index_and_subindex] = leaf_values_by_index_and_subindex[
+                    index_and_subindex]
+
+        Cs = list(map(lambda x: x[1], sorted(commitments_by_index_and_subindex.items())))
+
+        indices = list(map(lambda x: x[1], sorted(all_indices_and_subindices)))
+
+        ys = list(map(lambda x: x[1], sorted(subhashes_by_index_and_subindex.items())))
+
+        self.log_time_if_eligible("   Recreated commitment lists", 30, display_times)
+
+        return self.check_ipa_multiproof(Cs, indices, ys, [D_serialized, ipa_proof], display_times)
 
 def main():
     plyvel.destroy_db('/tmp/Verkle/')
@@ -607,11 +724,13 @@ def main():
     #     verkle.update_verkle_node(all_keys[i], values[all_keys[i]])
     time_y = time()
 
+    """
     with open('./test.txt', 'w', encoding='utf-8') as f:
     # 将dic dumps json 格式进行写入
         for key, value in values.items():    
             f.write(str(int.from_bytes(key, "little"))+': '+str(int.from_bytes(value, "little"))+"\n") 
-            
+    """
+
     print("Additionally inserted {0} elements in {1:.3f} s".format(verkle.NUMBER_ADDED_KEYS, time_y - time_x), file=sys.stderr)
 
     # print(verkle._root.data)
@@ -622,29 +741,52 @@ def main():
 
     print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
 
-    # all_keys = list(values.keys())
-    # shuffle(all_keys)
+    all_keys = list(values.keys())
+    shuffle(all_keys)
 
-    # keys_to_delete = all_keys[:verkle.NUMBER_DELETED_KEYS]
+    keys_to_delete = all_keys[:verkle.NUMBER_DELETED_KEYS]
 
-    # time_a = time()
-    # for key in keys_to_delete:
-    #     verkle.delete_verkle_node(key)
-    #     del values[key]
-    # time_b = time()
+    time_a = time()
+    for key in keys_to_delete:
+        verkle.delete_verkle_node(key)
+        del values[key]
+    time_b = time()
 
-    # print("Deleted {0} elements in {1:.3f} s".format(verkle.NUMBER_DELETED_KEYS, time_b - time_a), file=sys.stderr)
-    # print("Keys in tree now: {0}, average depth: {1:.3f}".format(verkle.get_total_depth(verkle._root)[1], verkle.get_average_depth()), file=sys.stderr)
+    print("Deleted {0} elements in {1:.3f} s".format(verkle.NUMBER_DELETED_KEYS, time_b - time_a), file=sys.stderr)
+    print("Keys in tree now: {0}, average depth: {1:.3f}".format(verkle.get_total_depth(verkle._root)[1], verkle.get_average_depth()), file=sys.stderr)
 
-    # time_a = time()
-    # verkle.check_valid_tree()
-    # time_b = time()
+    time_a = time()
+    verkle.check_valid_tree(verkle._root)
+    time_b = time()
     
-    # print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
+    print("[Checked tree valid: {0:.3f} s]".format(time_b - time_a), file=sys.stderr)
+
+    all_keys = list(values.keys())
+    shuffle(all_keys)
+
+    keys_in_proof = all_keys[:verkle.NUMBER_KEYS_PROOF]
+
+    time_a = time()
+    proof = verkle.make_verkle_proof(keys_in_proof)
+    time_b = time()
+    
+    proof_size = verkle.get_proof_size(proof)
+    proof_time = time_b - time_a
+    
+    print("Computed proof for {0} keys (size = {1} bytes) in {2:.3f} s".format(verkle.NUMBER_KEYS_PROOF, proof_size, time_b - time_a), file=sys.stderr)
+
+    time_a = time()
+    assert verkle.check_verkle_proof(keys_in_proof, [values[key] for key in keys_in_proof], proof)
+    time_b = time()
+    check_time = time_b - time_a
+
+    print("Checked proof in {0:.3f} s".format(time_b - time_a), file=sys.stderr)
+
     del verkle
     del db_verkle
     plyvel.destroy_db('/tmp/Verkle/')
 
 if __name__ == "__main__":
-    while True:
-        main()
+    #for i in range(10):
+    #    main()
+    main()
