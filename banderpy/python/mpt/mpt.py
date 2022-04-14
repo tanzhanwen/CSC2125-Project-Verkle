@@ -315,7 +315,7 @@ class MerklePatriciaTrie:
             if isinstance(self._storage, dict):
                 self._storage[reference] = node.encode()
             else:
-                self._storage.put(reference, node.encode)
+                self._storage.put(reference, node.encode())
         return reference
 
     # Enum that shows which action was performed on the previous step of the deletion.

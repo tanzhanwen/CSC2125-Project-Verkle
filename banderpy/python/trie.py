@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from glob import glob
-from verkle_trie import *
+from verkle_trie_new import *
 from new_bintrie import *
 from mpt import *
 
@@ -77,28 +77,19 @@ class Trie(ABC):
         pass
 
 
-class VerkleTrie(Trie):
-    def __init__(self, values, width_bits=8):
+class Verkle(Trie):
+    def __init__(self, values, width_bits=8, db=None):
         self._values = values
 
         # initialize the root of verkle trie
-        self._root = None
-        self._initialize(width_bits)
+        self._verkle = VerkleTrie(db, width_bits)
+        self._db = db
+        self._initialize()
 
-    def _initialize(self, width_bits):
-        WIDTH_BITS = width_bits
-        WIDTH = 2 ** WIDTH_BITS
-        primefield = PrimeField(MODULUS, WIDTH)
-
-        BASIS = generate_basis(WIDTH)
-        ipa_utils = IPAUtils(BASIS["G"], BASIS["Q"], primefield)
-        
-        self._root = {"node_type": "inner", "commitment": Point().mul(0)}
-
+    def _initialize(self):
         for key in self._values:
-            insert_verkle_node(self._root, key, self._values[key])
-    
-        add_node_hash(self._root)
+            self._verkle.insert_verkle_node(key, self._values[key]) 
+        self._verkle.add_node_hash(self._verkle.root())
 
     def root_hash(self):
         """_summary_
@@ -115,7 +106,7 @@ class VerkleTrie(Trie):
             key (bytes[32]): _description_
             value (bytes[32]): _description_
         """
-        update_verkle_node(self._root, key, value)
+        self._verkle.update_verkle_node(key, value)
         self._values[key] = value
     
     def delete(self, key):
@@ -126,8 +117,11 @@ class VerkleTrie(Trie):
         Args:
             key (bytes[32]): _description_
         """
-        delete_verkle_node(self._root, key)
+        self._verkle.delete_verkle_node(key)
         del self._values[key]
+
+    def check(self):
+        self._verkle.check_valid_tree(self._verkle._root)
     
     def get_proof(self, keys):
         """_summary_
@@ -135,7 +129,7 @@ class VerkleTrie(Trie):
         Args:
             keys ([bytes]): keys in proof
         """
-        return make_verkle_proof(self._root, keys)
+        return self._verkle.make_verkle_proof(keys)
     
     def verify(self, keys, values, proof):
         """_summary_
@@ -145,7 +139,7 @@ class VerkleTrie(Trie):
             values ([bytes]): values correspond to the keys
             proof (_type_): proof need to be verify
         """
-        return check_verkle_proof(self._root["commitment"].serialize(), keys, values, proof)
+        return self._verkle.check_verkle_proof(keys, values, proof)
 
 
 class SMT(Trie):
