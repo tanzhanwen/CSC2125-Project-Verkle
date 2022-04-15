@@ -35,7 +35,11 @@ python3 eval.py
 ## Parameters
 
 In eval.py, the following four parameters in main function define the dataset settings:
-    NUMBER_INITIAL_KEYS : Number of initial key value pairs in the tree
-    NUMBER_KEYS_PROOF : Number of keys to generate the proofs for
-    NUMBER_ADDED_KEYS : Number of keys to be updated
-    NUMBER_DELETED_KEYS : Number of keys to be deleted
+
+| Parameter             | Meaning                                       |
+| --------------------  | --------------------------------------------- |
+| NUMBER_INITIAL_KEYS   | Number of initial key value pairs in the tree |
+| NUMBER_INITIAL_KEYS   | Number of initial key value pairs in the tree |
+| NUMBER_KEYS_PROOF     | Number of keys to generate the proofs for     |
+| NUMBER_ADDED_KEYS     | Number of keys to be updated                  |
+| NUMBER_DELETED_KEYS   | Number of keys to be deleted                  |
