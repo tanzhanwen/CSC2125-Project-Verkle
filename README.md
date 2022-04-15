@@ -1,46 +1,41 @@
-bandersnatch-rust
+CSC2125 Verkle Tree Project
 ------
 ![GitHub branch checks state](https://img.shields.io/github/checks-status/zhenfeizhang/bandersnatch/main)
 ![docs.rs](https://img.shields.io/docsrs/bandersnatch/0.1.1)
 ![Crates.io (version)](https://img.shields.io/crates/dv/bandersnatch/0.1.1)
 ![GitHub](https://img.shields.io/github/license/zhenfeizhang/bandersnatch)
 
-This is a reference implementation of [Bandersnatch curve](https://ethresear.ch/t/introducing-bandersnatch-a-fast-elliptic-curve-built-over-the-bls12-381-scalar-field/9957) using [Arkwork](https://github.com/arkworks-rs/curves)'s framework in Rust.
-The spec of the curve is available 
-[here](https://github.com/asanso/Bandersnatch/blob/main/README.md).
-There is also a Python reference implementation [here](https://github.com/asanso/Bandersnatch/),
-and a python wrapper of this library [banderpy](https://github.com/zhenfeizhang/bandersnatch/tree/main/banderpy).
+This is a CSC2125 course project from UofT, which is aimed at testing the performance of Verkle Tree, comparing it with other models including Sparse Merkle Tree and Merkle Patricia Tree. The data can be stored in either memory or storage(LevelDB).
 
-# Logistics
-
-- This code is released under MIT license.
-- This code is not audited and may contain severe security flaws. Use at your own risk.
-- Version 0.1.1.
-- This repo is upstreamed to Arkworks [curve](https://github.com/arkworks-rs/curves/) crate.
-
-# Change log
-
-__0.1.1__: use a zcash style generator
-__0.1.0__: release
 
 # Howto
 
-## API docs
+## Required packages
+
+Rust, Cargo, Ethereum, Cpython, LevelDB, Plyvel
 
 ```
 cargo doc --open
 ```
 
-## Benchmarks
+## Run evaluations
+
+Step 1: In CSC2125-Project-Verkle/banderpy/, run：
 
 ```
-cargo bench
+make all
 ```
 
-## Examples
-Counting the number of constraints in group operations
+Step 2: Run the evaluation python file:
+
 ```
-cargo run --example constraint_count_bandersnatch
-cargo run --example constraint_count_jubjub
-cargo run --example constraint_count_bandersnatch_glv
+python3 eval.py
 ```
+
+## Parameters
+
+In eval.py, the following four parameters in main function define the dataset settings:
+    NUMBER_INITIAL_KEYS : Number of initial key value pairs in the tree
+    NUMBER_KEYS_PROOF : Number of keys to generate the proofs for
+    NUMBER_ADDED_KEYS : Number of keys to be updated
+    NUMBER_DELETED_KEYS : Number of keys to be deleted
